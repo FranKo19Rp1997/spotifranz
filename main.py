@@ -543,5 +543,3 @@ if __name__ == '__main__':
     print("  • Sistema de reconocimiento de voz: http://localhost:5000/speech-app")
     print("  • Sistema de recomendación: http://localhost:5000/recommendation-system")
     print("=" * 50)
-
-    app.run(debug=True)
