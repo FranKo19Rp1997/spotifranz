@@ -539,9 +539,5 @@ if __name__ == '__main__':
     print("Portafolio - Francisco Rivera")
     print("=" * 50)
     print("Proyectos incluidos:")
-    print(f"  • Portafolio personal: http://0.0.0.0:{port}")
-    print(f"  • Clasificador de imágenes: http://0.0.0.0:{port}/image-classifier")
-    print(f"  • Sistema de reconocimiento de voz: http://0.0.0.0:{port}/speech-app")
-    print(f"  • Sistema de recomendación: http://0.0.0.0:{port}/recommendation-system")
     print("=" * 50)
 
