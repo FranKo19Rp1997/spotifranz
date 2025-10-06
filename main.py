@@ -548,5 +548,3 @@ if __name__ == '__main__':
     print(f"  • Sistema de recomendación: http://0.0.0.0:{port}/recommendation-system")
     print("=" * 50)
 
-    # Iniciar la aplicación Flask
-    app.run(host='0.0.0.0', port=port)
