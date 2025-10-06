@@ -534,12 +534,19 @@ def favicon():
 
 
 if __name__ == '__main__':
+    # Obtener el puerto dinámico asignado por Render (o 5000 si no está disponible)
+    port = int(os.environ.get('PORT', 5000))
+
+    # Imprimir detalles en los logs
     print("=" * 50)
     print("Portafolio - Francisco Rivera")
     print("=" * 50)
     print("Proyectos incluidos:")
-    print("  • Portafolio personal: http://localhost:5000")
-    print("  • Clasificador de imágenes: http://localhost:5000/image-classifier")
-    print("  • Sistema de reconocimiento de voz: http://localhost:5000/speech-app")
-    print("  • Sistema de recomendación: http://localhost:5000/recommendation-system")
+    print(f"  • Portafolio personal: http://0.0.0.0:{port}")
+    print(f"  • Clasificador de imágenes: http://0.0.0.0:{port}/image-classifier")
+    print(f"  • Sistema de reconocimiento de voz: http://0.0.0.0:{port}/speech-app")
+    print(f"  • Sistema de recomendación: http://0.0.0.0:{port}/recommendation-system")
     print("=" * 50)
+
+    # Iniciar la aplicación Flask
+    app.run(host='0.0.0.0', port=port)
