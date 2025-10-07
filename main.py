@@ -535,7 +535,7 @@ def favicon():
 
 if __name__ == '__main__':
     # Obtener el puerto dinámico asignado por Render (o 5000 si no está disponible)
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 10000))
 
     # Imprimir detalles en los logs
     print("=" * 50)
