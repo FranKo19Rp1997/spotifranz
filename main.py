@@ -10,9 +10,6 @@ from typing import List, Optional, Dict, Any
 
 app = FastAPI(title="Portafolio - Francisco Rivera", version="1.0.0")
 
-# Configuración general
-MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
-UPLOAD_FOLDER = tempfile.gettempdir()
 
 
 
@@ -70,12 +67,6 @@ def custom_template_response(name: str, context: dict, **kwargs):
 
 templates.TemplateResponse = custom_template_response
 
-# Inicializar componentes
-classifier = ImageClassifier()
-transcriber = SpeechTranscriber()
-text_classifier = TextClassifier()
-audio_processor = AudioProcessor()
-recommendation_engine = RecommendationEngine()
 
 
 def allowed_file(filename: str) -> bool:
