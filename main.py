@@ -17,5 +17,5 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    # Ejecutar la aplicación en el puerto proporcionado por Render
+    # Ejecutar la aplicación en el puerto proporcionado por Rende
     print(f"App corriendo en el puerto {port}")
