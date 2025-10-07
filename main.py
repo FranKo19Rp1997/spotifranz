@@ -581,14 +581,9 @@ async def rate_product(data: dict):
 
 # ==================== RUTAS GENERALES ====================
 
-@app.get("/favicon.ico")
-async def favicon():
-    favicon_path = os.path.join("static", "favicon.ico")
-    if os.path.exists(favicon_path):
-        return FileResponse(favicon_path)
-    raise HTTPException(status_code=404, detail="Favicon not found")
 
-
-
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))  # Lee el puerto desde la variable de entorno
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
     #uvicorn.run(app, host="0.0.0.0", port=8000)
