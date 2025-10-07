@@ -8,17 +8,6 @@ from pathlib import Path
 import tempfile
 from typing import List, Optional, Dict, Any
 
-# Para el proyecto de clasificación de imágenes
-from inference import ImageClassifier
-
-# Para el proyecto de reconocimiento de voz
-from speech_transcriber import SpeechTranscriber
-from text_classifier import TextClassifier
-from audio_processor import AudioProcessor
-
-# Para el sistema de recomendación
-from recomendation_engine import RecommendationEngine
-
 app = FastAPI(title="Portafolio - Francisco Rivera", version="1.0.0")
 
 # Configuración general
