@@ -1,8 +1,12 @@
-from flask import Flask, render_template, send_from_directory, request, jsonify
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 import os
 import uuid
-from werkzeug.utils import secure_filename
+from pathlib import Path
 import tempfile
+from typing import List, Optional, Dict, Any
 
 # Para el proyecto de clasificación de imágenes
 from inference import ImageClassifier
@@ -15,24 +19,76 @@ from audio_processor import AudioProcessor
 # Para el sistema de recomendación
 from recomendation_engine import RecommendationEngine
 
-app = Flask(__name__)
+app = FastAPI(title="Portafolio - Francisco Rivera", version="1.0.0")
 
 # Configuración general
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
-app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
+UPLOAD_FOLDER = tempfile.gettempdir()
 
 # Configuración para el proyecto de imágenes
 IMAGE_UPLOAD_FOLDER = 'static/uploads'
 IMAGE_RESULTS_FOLDER = 'static/results'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'jfif'}
-app.config['IMAGE_UPLOAD_FOLDER'] = IMAGE_UPLOAD_FOLDER
-app.config['IMAGE_RESULTS_FOLDER'] = IMAGE_RESULTS_FOLDER
 
 # Crear directorios si no existen
-os.makedirs(IMAGE_UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(IMAGE_RESULTS_FOLDER, exist_ok=True)
-os.makedirs('models', exist_ok=True)
-os.makedirs('data/audio_samples', exist_ok=True)
+Path(IMAGE_UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
+Path(IMAGE_RESULTS_FOLDER).mkdir(parents=True, exist_ok=True)
+Path('models').mkdir(parents=True, exist_ok=True)
+Path('data/audio_samples').mkdir(parents=True, exist_ok=True)
+
+# Montar archivos estáticos
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Configurar templates
+templates = Jinja2Templates(directory="templates")
+
+
+# Función personalizada url_for para compatibilidad con Flask
+def url_for(request: Request, name: str, **kwargs) -> str:
+    """
+    Función personalizada que simula url_for de Flask para mantener compatibilidad
+    con las plantillas existentes.
+    """
+    if name == 'static':
+        filename = kwargs.get('filename', '')
+        return f"/static/{filename}"
+
+    # Mapeo de nombres de rutas de Flask a FastAPI
+    route_mapping = {
+        'index': '/',
+        'image_classifier': '/image-classifier',
+        'speech_app': '/speech-app',
+        'recommendation_system': '/recommendation-system',
+        'classify': '/classify',
+        'batch_classify': '/batch_classify',
+        'upload': '/upload',
+        'record': '/record',
+        'analyze_text': '/analyze_text',
+        'recommend': '/recommend',
+        'rate': '/rate'
+    }
+
+    return route_mapping.get(name, f'/{name}')
+
+
+# Inyectar la función url_for en todos los templates
+@app.middleware("http")
+async def add_url_for_to_templates(request: Request, call_next):
+    response = await call_next(request)
+    return response
+
+
+# Sobrescribir el método TemplateResponse para inyectar url_for
+original_template_response = templates.TemplateResponse
+
+
+def custom_template_response(name: str, context: dict, **kwargs):
+    if "request" in context:
+        context["url_for"] = lambda endpoint, **params: url_for(context["request"], endpoint, **params)
+    return original_template_response(name, context, **kwargs)
+
+
+templates.TemplateResponse = custom_template_response
 
 # Inicializar componentes
 classifier = ImageClassifier()
@@ -42,16 +98,16 @@ audio_processor = AudioProcessor()
 recommendation_engine = RecommendationEngine()
 
 
-def allowed_file(filename):
+def allowed_file(filename: str) -> bool:
     return '.' in filename and \
         filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def cleanup_files(file_paths):
+def cleanup_files(file_paths: List[str]) -> None:
     """Limpiar archivos temporales"""
     for file_path in file_paths:
         try:
-            if file_path and os.path.exists(file_path) and file_path != app.config['UPLOAD_FOLDER']:
+            if file_path and os.path.exists(file_path) and file_path != UPLOAD_FOLDER:
                 os.remove(file_path)
         except Exception as e:
             print(f"Error cleaning up {file_path}: {e}")
@@ -59,8 +115,8 @@ def cleanup_files(file_paths):
 
 # ==================== RUTAS DEL PORTAFOLIO ====================
 
-@app.route('/')
-def index():
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
     profile_data = {
         'name': 'Francisco Rivera',
         'title': 'Developer',
@@ -70,10 +126,10 @@ def index():
         'linkedin': 'www.linkedin.com/in/juan-francisco-rivera-perez-64b05932a',
 
         'about': (
-        "Developer and Systems Engineering student passionate about creating robust and scalable software "
-        "solutions. Experienced in building and integrating APIs, developing backend services "
-        "and working with containerized environments using Docker. I thrive in collaborative teams that embrace "
-        "innovation, continuous improvement, and clean code practices."
+            "Developer and Systems Engineering student passionate about creating robust and scalable software "
+            "solutions. Experienced in building and integrating APIs, developing backend services "
+            "and working with containerized environments using Docker. I thrive in collaborative teams that embrace "
+            "innovation, continuous improvement, and clean code practices."
         ),
         'experience': [
             {
@@ -111,7 +167,6 @@ def index():
                 ],
                 'icon': 'cogs'
             },
-
         ],
 
         'education': {
@@ -168,77 +223,84 @@ def index():
         ]
     }
 
-    return render_template('index.html', data=profile_data)
+    return templates.TemplateResponse("index.html", {"request": request, "data": profile_data})
 
 
 # ==================== RUTAS DEL CLASIFICADOR DE IMÁGENES ====================
 
-@app.route('/image-classifier')
-def image_classifier():
-    return render_template('project3.html')
+@app.get("/image-classifier", response_class=HTMLResponse)
+async def image_classifier(request: Request):
+    return templates.TemplateResponse("project3.html", {"request": request})
 
 
-@app.route('/classify', methods=['POST'])
-def classify_image():
+@app.post("/classify")
+async def classify_image(
+        file: UploadFile = File(...),
+        confidence: float = Form(0.5)
+):
     """Endpoint para clasificar una imagen"""
     try:
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file uploaded'})
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file selected")
 
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'})
+        if not allowed_file(file.filename):
+            raise HTTPException(status_code=400, detail="Invalid file type")
 
-        if file and allowed_file(file.filename):
-            # Generar nombre único para el archivo
-            filename = str(uuid.uuid4()) + '_' + secure_filename(file.filename)
-            filepath = os.path.join(app.config['IMAGE_UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+        # Generar nombre único para el archivo
+        filename = f"{uuid.uuid4()}_{file.filename}"
+        filepath = os.path.join(IMAGE_UPLOAD_FOLDER, filename)
 
-            # Procesar imagen
-            confidence_threshold = float(request.form.get('confidence', 0.5))
-            results = classifier.classify_image(filepath, confidence_threshold)
+        # Guardar archivo
+        contents = await file.read()
+        with open(filepath, "wb") as f:
+            f.write(contents)
 
-            # Guardar imagen con anotaciones
-            result_filename = f"result_{filename}"
-            result_path = os.path.join(app.config['IMAGE_RESULTS_FOLDER'], result_filename)
+        # Procesar imagen
+        results = classifier.classify_image(filepath, confidence)
 
-            # Visualizar resultados en la imagen
-            annotated_image = classifier.visualize_detections(filepath, results, result_path)
+        # Guardar imagen con anotaciones
+        result_filename = f"result_{filename}"
+        result_path = os.path.join(IMAGE_RESULTS_FOLDER, result_filename)
 
-            return jsonify({
-                'success': True,
-                'original_image': f'/static/uploads/{filename}',
-                'result_image': f'/static/results/{result_filename}',
-                'predictions': results['predictions'],
-                'summary': results['summary']
-            })
+        # Visualizar resultados en la imagen
+        annotated_image = classifier.visualize_detections(filepath, results, result_path)
 
-        return jsonify({'success': False, 'error': 'Invalid file type'})
+        return {
+            'success': True,
+            'original_image': f'/static/uploads/{filename}',
+            'result_image': f'/static/results/{result_filename}',
+            'predictions': results['predictions'],
+            'summary': results['summary']
+        }
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/batch_classify', methods=['POST'])
-def batch_classify():
+@app.post("/batch_classify")
+async def batch_classify(
+        files: List[UploadFile] = File(...),
+        confidence: float = Form(0.5)
+):
     """Endpoint para clasificación por lotes"""
     try:
-        files = request.files.getlist('files[]')
-        if not files or files[0].filename == '':
-            return jsonify({'success': False, 'error': 'No files selected'})
+        if not files or not files[0].filename:
+            raise HTTPException(status_code=400, detail="No files selected")
 
-        confidence_threshold = float(request.form.get('confidence', 0.5))
         results = []
 
         for file in files:
-            if file and allowed_file(file.filename):
-                filename = str(uuid.uuid4()) + '_' + secure_filename(file.filename)
-                filepath = os.path.join(app.config['IMAGE_UPLOAD_FOLDER'], filename)
-                file.save(filepath)
+            if file.filename and allowed_file(file.filename):
+                filename = f"{uuid.uuid4()}_{file.filename}"
+                filepath = os.path.join(IMAGE_UPLOAD_FOLDER, filename)
+
+                # Guardar archivo
+                contents = await file.read()
+                with open(filepath, "wb") as f:
+                    f.write(contents)
 
                 # Clasificar imagen
-                classification_result = classifier.classify_image(filepath, confidence_threshold)
+                classification_result = classifier.classify_image(filepath, confidence)
 
                 results.append({
                     'filename': file.filename,
@@ -247,82 +309,81 @@ def batch_classify():
                     'summary': classification_result['summary']
                 })
 
-        return jsonify({
+        return {
             'success': True,
             'results': results,
             'total_processed': len(results)
-        })
+        }
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/model_info')
-def get_model_info():
+@app.get("/model_info")
+async def get_model_info():
     """Obtener información del modelo"""
     try:
         model_info = classifier.get_model_info()
-        return jsonify({'success': True, 'model_info': model_info})
+        return {'success': True, 'model_info': model_info}
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/available_models')
-def get_available_models():
+@app.get("/available_models")
+async def get_available_models():
     """Obtener lista de modelos disponibles"""
     try:
         models = classifier.get_available_models()
-        return jsonify({'success': True, 'models': models})
+        return {'success': True, 'models': models}
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/switch_model', methods=['POST'])
-def switch_model():
+@app.post("/switch_model")
+async def switch_model(data: dict):
     """Cambiar el modelo activo"""
     try:
-        data = request.get_json()
         model_name = data.get('model_name')
 
         if classifier.switch_model(model_name):
-            return jsonify({'success': True, 'message': f'Model switched to {model_name}'})
+            return {'success': True, 'message': f'Model switched to {model_name}'}
         else:
-            return jsonify({'success': False, 'error': 'Failed to switch model'})
+            raise HTTPException(status_code=400, detail="Failed to switch model")
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== RUTAS DEL SISTEMA DE RECONOCIMIENTO DE VOZ ====================
 
-@app.route('/speech-app')
-def speech_app():
+@app.get("/speech-app", response_class=HTMLResponse)
+async def speech_app(request: Request):
     template_data = {
         'title': 'Sistema de Reconocimiento de Voz',
         'description': 'Convierte audio a texto y clasifica por tema o intención'
     }
-    return render_template('project2.html', data=template_data)
+    return templates.TemplateResponse("project2.html", {"request": request, "data": template_data})
 
 
-@app.route('/upload', methods=['POST'])
-def upload_audio():
+@app.post("/upload")
+async def upload_audio(audio: UploadFile = File(...)):
     try:
-        if 'audio' not in request.files:
-            return jsonify({'success': False, 'error': 'No audio file provided'})
+        if not audio.filename:
+            raise HTTPException(status_code=400, detail="No file selected")
 
-        audio_file = request.files['audio']
-        if audio_file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'})
+        if not audio_processor.is_audio_format_supported(audio.filename):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Formato no soportado. Use: {', '.join(audio_processor.supported_formats)}"
+            )
 
-        if not audio_processor.is_audio_format_supported(audio_file.filename):
-            return jsonify({
-                'success': False,
-                'error': f'Formato no soportado. Use: {", ".join(audio_processor.supported_formats)}'
-            })
+        filename = audio.filename
+        filepath = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4()}_{filename}")
 
-        filename = secure_filename(audio_file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{filename}")
-        audio_file.save(filepath)
+        # Guardar archivo
+        contents = await audio.read()
+        with open(filepath, "wb") as f:
+            f.write(contents)
 
         processed_audio_path = None
         try:
@@ -330,19 +391,19 @@ def upload_audio():
             transcription = transcriber.transcribe(processed_audio_path)
 
             if not transcription:
-                return jsonify({'success': False, 'error': 'No se pudo transcribir el audio'})
+                raise HTTPException(status_code=400, detail="No se pudo transcribir el audio")
 
             intent = text_classifier.predict_intent(transcription)
             topic = text_classifier.predict_topic(transcription)
             confidence = text_classifier.get_confidence(transcription)
 
-            return jsonify({
+            return {
                 'success': True,
                 'transcription': transcription,
                 'intent': intent,
                 'topic': topic,
                 'confidence': float(confidence)
-            })
+            }
 
         finally:
             files_to_clean = [filepath]
@@ -350,25 +411,27 @@ def upload_audio():
                 files_to_clean.append(processed_audio_path)
             cleanup_files(files_to_clean)
 
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/record', methods=['POST'])
-def record_audio():
+@app.post("/record")
+async def record_audio(audio: UploadFile = File(...)):
     try:
-        if 'audio' not in request.files:
-            return jsonify({'success': False, 'error': 'No audio data provided'})
+        if not audio.filename:
+            raise HTTPException(status_code=400, detail="No audio data provided")
 
-        audio_file = request.files['audio']
+        if not audio.filename.lower().endswith('.webm'):
+            raise HTTPException(status_code=400, detail="Solo se soporta WebM para grabaciones")
 
-        if not audio_file.filename.lower().endswith('.webm'):
-            return jsonify({'success': False, 'error': 'Solo se soporta WebM para grabaciones'})
+        filepath = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4()}_recording.webm")
 
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_recording.webm")
-        audio_file.save(filepath)
+        # Guardar archivo
+        contents = await audio.read()
+        with open(filepath, "wb") as f:
+            f.write(contents)
 
         processed_path = None
         try:
@@ -376,19 +439,19 @@ def record_audio():
             transcription = transcriber.transcribe(processed_path)
 
             if not transcription:
-                return jsonify({'success': False, 'error': 'No se pudo transcribir el audio'})
+                raise HTTPException(status_code=400, detail="No se pudo transcribir el audio")
 
             intent = text_classifier.predict_intent(transcription)
             topic = text_classifier.predict_topic(transcription)
             confidence = text_classifier.get_confidence(transcription)
 
-            return jsonify({
+            return {
                 'success': True,
                 'transcription': transcription,
                 'intent': intent,
                 'topic': topic,
                 'confidence': float(confidence)
-            })
+            }
 
         finally:
             files_to_clean = [filepath]
@@ -396,48 +459,47 @@ def record_audio():
                 files_to_clean.append(processed_path)
             cleanup_files(files_to_clean)
 
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/analyze_text', methods=['POST'])
-def analyze_text():
+@app.post("/analyze_text")
+async def analyze_text(data: dict):
     try:
-        data = request.get_json()
         text = data.get('text', '')
 
         if not text:
-            return jsonify({'success': False, 'error': 'No text provided'})
+            raise HTTPException(status_code=400, detail="No text provided")
 
         intent = text_classifier.predict_intent(text)
         topic = text_classifier.predict_topic(text)
         confidence = text_classifier.get_confidence(text)
 
-        return jsonify({
+        return {
             'success': True,
             'intent': intent,
             'topic': topic,
             'confidence': float(confidence)
-        })
+        }
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/supported_formats')
-def supported_formats():
-    return jsonify({
+@app.get("/supported_formats")
+async def supported_formats():
+    return {
         'success': True,
         'formats': audio_processor.supported_formats,
         'note': 'Para grabación en vivo: WebM. Para archivos: WAV'
-    })
+    }
 
 
-@app.route('/health')
-def health_check():
-    return jsonify({
+@app.get("/health")
+async def health_check():
+    return {
         'success': True,
         'status': 'running',
         'components': {
@@ -445,20 +507,19 @@ def health_check():
             'classifier': 'ready',
             'audio_processor': 'ready'
         }
-    })
+    }
 
 
 # ==================== RUTAS DEL SISTEMA DE RECOMENDACIÓN ====================
 
-@app.route('/recommendation-system')
-def recommendation_system():
-    return render_template('recommendation_index.html')
+@app.get("/recommendation-system", response_class=HTMLResponse)
+async def recommendation_system(request: Request):
+    return templates.TemplateResponse("recommendation_index.html", {"request": request})
 
 
-@app.route('/recommend', methods=['POST'])
-def get_recommendations():
+@app.post("/recommend")
+async def get_recommendations(data: dict):
     try:
-        data = request.get_json()
         user_id = data.get('user_id')
         preferences = data.get('preferences', {})
         top_n = data.get('top_n', 5)
@@ -470,81 +531,75 @@ def get_recommendations():
             # Obtener recomendaciones basadas en preferencias específicas
             recommendations = recommendation_engine.get_recommendations_based_on_preferences(preferences, top_n)
 
-        return jsonify({
+        return {
             'success': True,
             'recommendations': recommendations
-        })
+        }
 
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 400
+        raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.route('/products')
-def get_products():
+@app.get("/products")
+async def get_products():
     """Endpoint para obtener la lista de productos disponibles"""
     products = recommendation_engine.get_available_products()
-    return jsonify({
+    return {
         'success': True,
         'products': products
-    })
+    }
 
 
-@app.route('/users')
-def get_users():
+@app.get("/users")
+async def get_users():
     """Endpoint para obtener la lista de usuarios"""
     users = recommendation_engine.get_available_users()
-    return jsonify({
+    return {
         'success': True,
         'users': users
-    })
+    }
 
 
-@app.route('/rate', methods=['POST'])
-def rate_product():
+@app.post("/rate")
+async def rate_product(data: dict):
     """Endpoint para calificar un producto"""
     try:
-        data = request.get_json()
         user_id = data['user_id']
         product_id = data['product_id']
         rating = data['rating']
 
         success = recommendation_engine.add_rating(user_id, product_id, rating)
 
-        return jsonify({
+        return {
             'success': success,
             'message': 'Rating added successfully' if success else 'Failed to add rating'
-        })
+        }
 
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 400
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ==================== RUTAS GENERALES ====================
 
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(app.root_path, 'static'),
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+@app.get("/favicon.ico")
+async def favicon():
+    favicon_path = os.path.join("static", "favicon.ico")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path)
+    raise HTTPException(status_code=404, detail="Favicon not found")
 
 
-if __name__ == '__main__':
-    # Obtener el puerto dinámico asignado por Render (o 5000 si no está disponible)
-    port = int(os.environ.get('PORT', 10000))
+if __name__ == "__main__":
+    #import uvicorn
 
-    # Imprimir detalles en los logs
     print("=" * 50)
     print("Portafolio - Francisco Rivera")
     print("=" * 50)
     print("Proyectos incluidos:")
-    print(f"  • Portafolio personal: http://0.0.0.0:{port}")
-    print(f"  • Clasificador de imágenes: http://0.0.0.0:{port}/image-classifier")
-    print(f"  • Sistema de reconocimiento de voz: http://0.0.0.0:{port}/speech-app")
-    print(f"  • Sistema de recomendación: http://0.0.0.0:{port}/recommendation-system")
+    print("  • Portafolio personal: http://localhost:8000")
+    print("  • Clasificador de imágenes: http://localhost:8000/image-classifier")
+    print("  • Sistema de reconocimiento de voz: http://localhost:8000/speech-app")
+    print("  • Sistema de recomendación: http://localhost:8000/recommendation-system")
     print("=" * 50)
 
+    #uvicorn.run(app, host="0.0.0.0", port=8000)
