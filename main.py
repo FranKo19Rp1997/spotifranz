@@ -589,17 +589,6 @@ async def favicon():
     raise HTTPException(status_code=404, detail="Favicon not found")
 
 
-if __name__ == "__main__":
-    #import uvicorn
 
-    print("=" * 50)
-    print("Portafolio - Francisco Rivera")
-    print("=" * 50)
-    print("Proyectos incluidos:")
-    print("  • Portafolio personal: http://localhost:8000")
-    print("  • Clasificador de imágenes: http://localhost:8000/image-classifier")
-    print("  • Sistema de reconocimiento de voz: http://localhost:8000/speech-app")
-    print("  • Sistema de recomendación: http://localhost:8000/recommendation-system")
-    print("=" * 50)
 
     #uvicorn.run(app, host="0.0.0.0", port=8000)
